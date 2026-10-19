@@ -45,6 +45,15 @@ class MoneyTest {
     }
 
     @Test
+    void valoresSubcentavoNaoSaoIgualadosPorArredondamento() {
+        Money valorComFracao = Money.of("10.004");
+        Money valorExato = Money.of("10.00");
+
+        assertNotEquals(valorComFracao, valorExato);
+        assertNotEquals(valorComFracao.plus(Money.of("1.00")), valorExato.plus(Money.of("1.00")));
+    }
+
+    @Test
     void ehImutavel() {
         Money original = Money.of("50.00");
 

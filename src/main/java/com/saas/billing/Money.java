@@ -47,12 +47,12 @@ public record Money(BigDecimal amount) {
 
     @Override
     public boolean equals(Object o) {
-        return o instanceof Money other && rounded().equals(other.rounded());
+        return o instanceof Money other && amount.compareTo(other.amount) == 0;
     }
 
     @Override
     public int hashCode() {
-        return rounded().hashCode();
+        return amount.stripTrailingZeros().hashCode();
     }
 
     @Override
