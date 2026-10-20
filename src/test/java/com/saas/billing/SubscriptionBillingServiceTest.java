@@ -58,6 +58,24 @@ class SubscriptionBillingServiceTest {
     }
 
     @Test
+    void customerWithNullStatusIsInactive() {
+        InMemoryCustomerRepository customers = new InMemoryCustomerRepository(
+                Optional.of(new Customer("customer@example.com", null)));
+        InMemoryInvoiceRepository invoices = new InMemoryInvoiceRepository();
+        RecordingPaymentGateway payments = new RecordingPaymentGateway(true);
+        RecordingNotificationService notifications = new RecordingNotificationService();
+        SubscriptionBillingService service = service(customers, invoices, payments, notifications);
+
+        List<String> logs = service.processMonthlyBilling(command(null, 0));
+
+        assertEquals(1, logs.size());
+        assertTrue(logs.get(0).contains("Cliente inativo"));
+        assertEquals(0, payments.calls);
+        assertEquals(0, invoices.invoiceCount);
+        assertNull(notifications.recipient);
+    }
+
+    @Test
     void failedPaymentStillPersistsInvoiceAndSendsReceipt() {
         InMemoryCustomerRepository customers = new InMemoryCustomerRepository(
                 Optional.of(new Customer("customer@example.com", "ACTIVE")));
