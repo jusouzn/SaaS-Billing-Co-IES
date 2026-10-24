@@ -119,7 +119,7 @@ class SubscriptionBillingServiceTest {
     }
 
     private BillingCommand command(String promoCode, int overdueDays) {
-        return new BillingCommand("customer-1", "PRO", Money.of("100.00"),
+        return new BillingCommand("customer-1", Money.of("100.00"),
                 LocalDate.of(2025, 11, 1), overdueDays, promoCode, false, "tok_test");
     }
 

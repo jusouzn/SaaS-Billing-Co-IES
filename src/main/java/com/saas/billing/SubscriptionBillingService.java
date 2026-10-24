@@ -1,6 +1,5 @@
 package com.saas.billing;
 
-import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -10,19 +9,12 @@ import java.util.Optional;
 
 public class SubscriptionBillingService {
 
-    private static final BigDecimal DISCOUNT_2_YEARS = new BigDecimal("0.15");
-    private static final BigDecimal DISCOUNT_1_YEAR = new BigDecimal("0.10");
-    private static final BigDecimal NON_PROFIT_FACTOR = new BigDecimal("0.70");
-    private static final Money BLACKFRIDAY_DISCOUNT = Money.of("30.00");
-    private static final BigDecimal WELCOME10_FACTOR = new BigDecimal("0.90");
-    private static final BigDecimal LATE_PENALTY = new BigDecimal("0.02");
-    private static final BigDecimal DAILY_INTEREST = new BigDecimal("0.001");
-
     private final CustomerRepository customerRepository;
     private final InvoiceRepository invoiceRepository;
     private final PaymentGateway paymentGateway;
     private final NotificationService notificationService;
     private final Clock clock;
+    private final PricingCalculator pricingCalculator = new PricingCalculator();
 
     public SubscriptionBillingService(
             CustomerRepository customerRepository,
@@ -37,74 +29,46 @@ public class SubscriptionBillingService {
         this.clock = Objects.requireNonNull(clock);
     }
 
+    // planType nunca foi usado no cálculo; continua na assinatura só para não quebrar quem chama
     @Deprecated
     public List<String> processMonthlyBilling(String customerId, String planType, double basePrice,
                                              String signupDateStr, int overdueDays, String promoCode,
                                              boolean isNonProfit, String paymentCardToken) {
-        return processMonthlyBilling(new BillingCommand(customerId, planType, Money.of(basePrice),
+        return processMonthlyBilling(new BillingCommand(customerId, Money.of(basePrice),
                 LocalDate.parse(signupDateStr), overdueDays, promoCode, isNonProfit, paymentCardToken));
     }
 
     public List<String> processMonthlyBilling(BillingCommand command) {
         Objects.requireNonNull(command);
-        List<String> logs = new ArrayList<>();
-        LocalDate today = LocalDate.now(clock);
-        int monthsActive = (today.getYear() - command.signupDate().getYear()) * 12
-                + (today.getMonthValue() - command.signupDate().getMonthValue());
-        Money basePrice = command.basePrice();
-        Money calculatedPrice = basePrice;
+        Money price = pricingCalculator.calculate(command, LocalDate.now(clock));
 
-        if (monthsActive > 24) {
-            calculatedPrice = calculatedPrice.minus(basePrice.times(DISCOUNT_2_YEARS));
-        } else if (monthsActive > 12) {
-            calculatedPrice = calculatedPrice.minus(basePrice.times(DISCOUNT_1_YEAR));
+        Optional<Customer> customer = customerRepository.findById(command.customerId());
+        if (customer.isEmpty()) {
+            return new ArrayList<>();
         }
-
-        if (command.nonProfit()) {
-            calculatedPrice = calculatedPrice.times(NON_PROFIT_FACTOR);
-        }
-
-        if (command.hasPromoCode()) {
-            if (command.promoCode().equalsIgnoreCase("BLACKFRIDAY") && today.getMonthValue() == 11) {
-                calculatedPrice = calculatedPrice.minus(BLACKFRIDAY_DISCOUNT);
-            } else if (command.promoCode().equalsIgnoreCase("WELCOME10") && monthsActive <= 1) {
-                calculatedPrice = calculatedPrice.times(WELCOME10_FACTOR);
-            }
-        }
-
-        if (command.overdueDays() > 0) {
-            Money penalty = calculatedPrice.times(LATE_PENALTY);
-            Money dailyInterest = calculatedPrice.times(DAILY_INTEREST).times(command.overdueDays());
-            calculatedPrice = calculatedPrice.plus(penalty).plus(dailyInterest);
-        }
-
-        if (calculatedPrice.isNegative()) {
-            calculatedPrice = Money.ZERO;
-        }
-
-        Optional<Customer> customerResult = customerRepository.findById(command.customerId());
-        if (customerResult.isEmpty()) {
-            return logs;
-        }
-
-        Customer customer = customerResult.get();
-        if (!customer.isActive()) {
+        if (!customer.get().isActive()) {
+            List<String> logs = new ArrayList<>();
             logs.add("Cliente inativo. Cobrança cancelada: " + command.customerId());
             return logs;
         }
+        return chargeAndNotify(command, customer.get(), price);
+    }
 
-        boolean paymentSuccess = paymentGateway.charge(command.paymentCardToken(), calculatedPrice);
-        if (paymentSuccess) {
-            logs.add("Pagamento processado com sucesso: R$ " + calculatedPrice);
+    private List<String> chargeAndNotify(BillingCommand command, Customer customer, Money price) {
+        List<String> logs = new ArrayList<>();
+
+        boolean paid = paymentGateway.charge(command.paymentCardToken(), price);
+        if (paid) {
+            logs.add("Pagamento processado com sucesso: R$ " + price);
         } else {
             logs.add("Falha no pagamento do cartão para: " + command.customerId());
         }
 
-        invoiceRepository.saveInvoice(command.customerId(), calculatedPrice,
-                paymentSuccess ? InvoiceStatus.PAID : InvoiceStatus.FAILED, clock.instant());
-        notificationService.sendInvoiceReceipt(customer.email(), calculatedPrice);
+        InvoiceStatus status = paid ? InvoiceStatus.PAID : InvoiceStatus.FAILED;
+        invoiceRepository.saveInvoice(command.customerId(), price, status, clock.instant());
+
+        notificationService.sendInvoiceReceipt(customer.email(), price);
         logs.add("E-mail disparado para: " + customer.email());
         return logs;
     }
-
 }

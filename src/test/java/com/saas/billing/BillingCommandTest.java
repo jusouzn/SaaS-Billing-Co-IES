@@ -8,7 +8,7 @@ import org.junit.jupiter.api.Test;
 class BillingCommandTest {
 
     private BillingCommand comPromo(String promoCode) {
-        return new BillingCommand("cus_1", "PRO", Money.of("100.00"), LocalDate.of(2025, 1, 10),
+        return new BillingCommand("cus_1", Money.of("100.00"), LocalDate.of(2025, 1, 10),
                 0, promoCode, false, "tok_123");
     }
 
@@ -21,11 +21,11 @@ class BillingCommandTest {
 
     @Test
     void exigeCamposObrigatorios() {
-        assertThrows(NullPointerException.class, () -> new BillingCommand(null, "PRO",
+        assertThrows(NullPointerException.class, () -> new BillingCommand(null,
                 Money.of("100.00"), LocalDate.of(2025, 1, 10), 0, null, false, "tok_1"));
-        assertThrows(NullPointerException.class, () -> new BillingCommand("cus_1", "PRO",
+        assertThrows(NullPointerException.class, () -> new BillingCommand("cus_1",
                 null, LocalDate.of(2025, 1, 10), 0, null, false, "tok_1"));
-        assertThrows(NullPointerException.class, () -> new BillingCommand("cus_1", "PRO",
+        assertThrows(NullPointerException.class, () -> new BillingCommand("cus_1",
                 Money.of("100.00"), null, 0, null, false, "tok_1"));
     }
 }
